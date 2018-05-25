@@ -241,6 +241,10 @@ Upon initialization of the service, it calls `io(window.EmberENV.API_URL)`. So y
 
 Look in the logs, and see if a `LIVELY_INITIALIED` event is received. If so, then Lively succesfully connected to the back-end, has a LivelyUser created, and is ready to send and receive events.
 
+#### Dependencies
+
+The Lively front-end module depends on the `redux` and `socket.io-client` npm packages, so install them in your Ember app, and include them in your `ember-cli-build.js` file.
+
 ### Registering Reactions to back-end Events
 
 ```javascript
