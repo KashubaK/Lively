@@ -302,7 +302,7 @@ lively.registerEvent('VIEW_TOGGLED', (state, action) => {
 
 // You can do this wherever, either in a component Action or whatever. As long as the event handler is registered correctly beforehand!
 lively.dispatchClientAction({
-	type: 'VIEW_TOGGLED',
-	payload: lively.state.viewToggled ? false : true
+    type: 'VIEW_TOGGLED',
+    payload: lively.state.viewToggled ? false : true
 });
 ```
