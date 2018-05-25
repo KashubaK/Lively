@@ -43,10 +43,10 @@ For example, a Todo schema:
 const mongoose = require('mongoose');
 
 const TodoSchema = new mongoose.Schema({
-	title: String,
-	description: String,
-	completeBy: Date,
-	images: [String]
+    title: String,
+    description: String,
+    completeBy: Date,
+    images: [String]
 });
 
 TodoSchema.plugin(<any plugin you want>);
@@ -64,25 +64,25 @@ Actions are simple objects:
 
 ```javascript
 module.exports = {
-	schema: {},
-
-	fn(payload, sender, lively, Model) {
-		return new Promise((resolve, reject) => {
-        	let condition = false;
-			if (condition) reject("Any error");
+    schema: {},
+    
+    fn(payload, sender, lively, Model) {
+        return new Promise((resolve, reject) => {
+            let condition = false;
+            if (condition) reject("Any error");
             
-			// Do anything
+            // Do anything
             
             sender.sendEvent({
-            	type: "AN_EVENT",
+                type: "AN_EVENT",
                 payload: {
-                	foo: "bar"
+                    foo: "bar"
                 }
             });
 			
             resolve(); // Job is done
-		});
-	}
+        });
+    }
 };
 ```
 
@@ -119,8 +119,6 @@ Lively handles actions one-by-one, thus requiring `Action.fn` to return a Promis
 Actions can also be endpoints, by declaring some extra keys in your action. Here’s a quick example that returns a simple object:
 
 ```javascript
-const passport = require('passport');
-
 module.exports =  {
     schema: {},
 
@@ -134,7 +132,7 @@ module.exports =  {
                 hello: 'world'
             });
 
-	        resolve();
+            resolve();
        });
    }
 }
@@ -169,7 +167,7 @@ You can do that. Lively stores users based on their `socket.id`, which is sent w
 Now that we know how to find the user’s `socket.id`, we can call `find` on `lively.users` to get the `LivelyUser`. Like so:
 
 ```javascript
-const sender = lively.users.find(user => user.socket.id === req.headers[‘x-socket-id`]);
+const sender = lively.users.find(user => user.socket.id === req.headers['x-socket-id']);
 
 if (sender) {
     sender.sendEvent({
@@ -227,13 +225,21 @@ User data. So when a User logs in (however you build that mechanism), you should
 
 #### socket 
 
-When `io.on(‘connection’, socket => … )` is fired, that `socket` object is stored in a new User object.
+When `io.on('connection', socket => … )` is fired, that `socket` object is stored in a new User object.
 
 ## Front-end
 
 #### Ember.js + Socket.io + Redux
 
-The front-end module can be found under `Lively/client/lively.js`. This module is an Ember service, so just copy and paste it into your `app/services` folder, and inject it into any component/controller/route/etc that needs it.
+The front-end module can be found under `Lively/client/lively.js`.
+
+### Setup
+
+This module is an Ember service, so just copy and paste it into your `app/services` folder, and inject it into any component/controller/route/etc that needs it.
+
+Upon initialization of the service, it calls `io(window.EmberENV.API_URL)`. So you'll need to add your `API_URL` to your Ember front-end `config/environment.js` file.
+
+Look in the logs, and see if a `LIVELY_INITIALIED` event is received. If so, then Lively succesfully connected to the back-end, has a LivelyUser created, and is ready to send and receive events.
 
 ### Registering Reactions to back-end Events
 
@@ -270,10 +276,10 @@ What, you want to communicate with the back-end? Simply call `lively.dispatchSer
 
 ```javascript
 aFunction() {
-	this.get('lively').dispatchServerAction({
-	    type: 'FOO',
-	    payload: 'bar'
-	});
+    this.get('lively').dispatchServerAction({
+        type: 'FOO',
+        payload: 'bar'
+    });
 }
 ```
 
@@ -289,7 +295,7 @@ Check it, yo:
 const lively = this.get('lively');
 
 lively.registerEvent('VIEW_TOGGLED', (state, action) => {
-	state.viewToggled = action.payload;
+    state.viewToggled = action.payload;
     
     return state;
 });
