@@ -3,24 +3,18 @@ const v4 = require('uuid').v4;
 const SocketIO = require('socket.io');
 const Ajv = require('ajv');
 const express = require('express');
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
 const http = require('http');
 const bodyParser = require('body-parser');
 const _ = require('lodash');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
-const fileUpload = require('express-fileupload');
-const TokenHandler = require('./util/tokenHandler');
 
 const User = require('./User');
-const UserSchema = require ('./schemas/User');
 
-function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
+function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
     this.io = {};
     this.mongoose = mongoose;
-    this.tokenHandler = new TokenHandler();
 
     this.models = Immutable.Map();
     this.actions = Immutable.Map();
@@ -47,10 +41,21 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
     };
 
     this.sendNextAction = () => {
+        clearTimeout(this.actionTimeout);
+        this.currentAction = null;
+
         const nextAction = this.actionQueue.shift();
 
         if (nextAction) {
             this.sendAction(nextAction.sender, nextAction.actionPayload);
+        }
+    };
+
+    this.setActionTimeout = () => {
+        if (this.actionQueue.length > 0) {
+            this.actionTimeout = setTimeout(() => {
+                this.sendNextAction();
+            }, livelyOpts.actionTimeout || 2000);
         }
     };
 
@@ -63,40 +68,27 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
         return !valid ? validate.errors : true;
     };
 
-    this.sendAction = (sender, actionPayload) => {
+    this.sendAction = (sender, actionBody) => {
         if (this.currentAction) {
-            if ((Date.now() - this.currentAction.fired_at) / 1000 >= 2) {
-                console.log(`${this.currentAction.actionPayload.type} took longer than 2 seconds to resolve, pushing ${actionPayload.type}`);
-                this.currentAction = { fired_at: Date.now(), sender, actionPayload };
-            } else {
-                console.log(`Waiting on ${this.currentAction.actionPayload.type} to resolve, pushing to queue`, (Date.now() - this.currentAction.fired_at) / 1000);
-                return this.addActionToQueue(sender, actionPayload);
-            }
+            return this.addActionToQueue(sender, actionBody);
         } else {
-            console.log(`Firing action ${actionPayload.type}`)
-            this.currentAction = { fired_at: Date.now(), sender, actionPayload };
+            this.currentAction = { fired_at: Date.now(), sender, actionBody };
         }
 
-        let type = actionPayload.type;
-        let payload = actionPayload.payload;
+        let type = actionBody.type;
+        let payload = actionBody.payload;
 
         const action = this.getAction(type);
-        const Model = this.getModel(action.model_type); // Can return undefined for top-level actions
+        const Model = this.getModel(action.model_type);
 
         const schemaCheck = this.validateActionPayload(action.schema, payload);
 
         if (schemaCheck === true) {
             action.fn(payload, sender, this, Model)
                 .then(() => {
-                    console.log(`${type} resolved.`)
-                    clearTimeout(this.actionTimeout);
-                    this.currentAction = null;
                     this.sendNextAction();
                 }, (err) => {
-                    console.log("Caught error from action", err)
                     sender.sendError(payload, err);
-                    clearTimeout(this.actionTimeout);
-                    this.currentAction = null;
                     this.sendNextAction();
                 })
         } else {
@@ -109,14 +101,10 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
             })
         };
 
-        this.actionTimeout = setTimeout(() => {
-            console.log(` ${this.currentAction.actionPayload.type} took too long to resolve, pushing next queued action`);
-            this.currentAction = null;
-            this.sendNextAction();
-        }, 2000);
+        this.setActionTimeout();
     };
 
-    this.addAction = (action) => {
+    this.addAction = action => {
         console.log(`[Lively addAction]: Adding action ${action.type}, of Model ${action.model_type}`);
         this.actions = this.actions.set(action.type, action);
     };
@@ -124,7 +112,7 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
     this.getAction = action_type => this.actions.get(action_type);
 
     // TODO: Let people name their files in camelCase, snake_case, etc. Parse into CONSTANT_CASE.
-    this.loadActions = (pathToActions) => {
+    this.loadActions = pathToActions => {
         // recursive function to map files from directory
         const walkSync = (d) => {
             if (fs.statSync(d).isDirectory()) {
@@ -152,9 +140,7 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
                     action.type = action_type;
 
                     if (action.endpoint) {
-                        console.log("Initing", action.endpoint, action.method)
                         this.api[action.method](`/api${action.endpoint}`, action.middleware || function(req, res, next) { next() }, (req, res) => {
-                            console.log("Got past middleware")
                             this.sendAction(res, {
                                 type: action.type,
                                 payload: req
@@ -176,30 +162,14 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
         });
     };
 
-    this.getModels = () => {
-        var models = {};
+    this.getModel = type => this.models.get(type);
 
-        this.models.map((model) => {
-            models[model.modelName] = {
-                _id: model._id,
-                type: model.type,
-                actions: this.actions.filter(action => action.model_type === model.modelName)
-            }
-        });
-
-        return models;
-    };
-
-    this.getModel = (type) => {
-        return this.models.get(type);
-    };
-
-    this.addModel = (model) => {
+    this.addModel = model => {
         console.log(`[Lively addModel]: Adding model ${model.modelName}`);
         this.models = this.models.set(model.modelName, model);
     };
 
-    this.loadModels = (pathToSchemas) => {
+    this.loadModels = pathToSchemas => {
         // recursive function to map files from directory
         const walkSync = (d) => {
             if (fs.statSync(d).isDirectory()) {
@@ -219,40 +189,13 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
         });
     };
 
-    // TODO: Move this to a separate SocketHandler.
     this.init = () => {
-        console.log("Lively Server live at", Date());
-
         if (schemasPath) this.loadModels(schemasPath);
 
-        const app = express();
-
-        passport.use(UserSchema.createStrategy());
-        passport.use(this.tokenHandler.passportStrategy);
-
-        passport.serializeUser(UserSchema.serializeUser());
-        passport.deserializeUser(UserSchema.deserializeUser());
-
-        app.use(function(req, res, next){
-            res.setHeader('Access-Control-Allow-Origin', 'http://localhost:4200');
-            res.setHeader('Access-Control-Allow-Credentials', 'true');
-            res.setHeader('Access-Control-Allow-Headers', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'POST,PUT,GET,DELETE,OPTIONS');
-            next();
-        });
-
-        app.use(bodyParser.json({limit: '50mb'}));
-
-        app.use(require('express-session')({
-            secret: 'keyboard cat',
-            resave: false,
-            saveUninitialized: false
-        }));
-
-        app.use(passport.initialize());
-        app.use(passport.session());
-
-        this.api = app;
+        this.api = express();
+        
+        this.api.use(cors());
+        this.api.use(bodyParser.json());
 
         if (actionsPath) this.loadActions(actionsPath);
 
@@ -281,7 +224,6 @@ function Lively({expressOpts, mongoose, schemasPath, actionsPath}) {
             // actionPayload: { type: ReduxAction.type, payload: ReduxAction.payload }
             socket.on('lively_action', (actionPayload) => {
                 const sender = this.users.find(user => user.socket.id === socket.id);
-                console.log("Got action, sender", sender)
                 this.sendAction(sender, actionPayload);
             });
         });
