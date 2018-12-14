@@ -1,46 +1,52 @@
-const Immutable = require('immutable');
-const v4 = require('uuid').v4;
-const SocketIO = require('socket.io');
-const Ajv = require('ajv');
-const express = require('express');
-const http = require('http');
-const bodyParser = require('body-parser');
-const _ = require('lodash');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
+import Immutable from 'immutable';
+import SocketIO from 'socket.io';
+import Ajv from 'ajv';
+import express from 'express';
+import http from 'http';
+import bodyParser from 'body-parser';
+import _ from 'lodash';
+import path from 'path';
+import cors from 'cors';
+import fs from 'fs';
 
-const User = require('./User');
+import User from './User';
 
-function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
-    this.io = {};
-    this.mongoose = mongoose;
+class Lively {
+    constructor({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
+        this.io = {};
+        this.mongoose = mongoose;
+    
+        this.models = Immutable.Map();
+        this.actions = Immutable.Map();
+    
+        this.users = Immutable.Map();
+    
+        this.actionQueue = [];
+        this.currentAction = null;
 
-    this.models = Immutable.Map();
-    this.actions = Immutable.Map();
+        this.livelyOpts = livelyOpts;
+        this.expressOpts = expressOpts;
+        this.schemasPath = schemasPath;
+        this.actionsPath = actionsPath;
+    }
 
-    this.users = Immutable.Map();
-
-    this.actionQueue = [];
-    this.currentAction = null;
-
-    this.sendEventToSubscribers = (document, event) => {
+    sendEventToSubscribers(document, event) {
         const modelName = document.constructor.modelName;
         const _id = document._id;
 
         const subscription = `${modelName}#${_id}`;
 
         this.io.to(subscription).emit('lively_event', event);
-    };
+    }
 
-    this.addActionToQueue = (sender, actionPayload) => {
+    addActionToQueue(sender, actionPayload) {
         this.actionQueue.push({
             sender,
             actionPayload
         });
-    };
+    }
 
-    this.sendNextAction = () => {
+    sendNextAction() {
         clearTimeout(this.actionTimeout);
         this.currentAction = null;
 
@@ -49,26 +55,26 @@ function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
         if (nextAction) {
             this.sendAction(nextAction.sender, nextAction.actionPayload);
         }
-    };
+    }
 
-    this.setActionTimeout = () => {
+    setActionTimeout() {
         if (this.actionQueue.length > 0) {
             this.actionTimeout = setTimeout(() => {
                 this.sendNextAction();
-            }, livelyOpts.actionTimeout || 2000);
+            }, this.livelyOpts.actionTimeout || 2000);
         }
-    };
+    }
 
-    this.validateActionPayload = (schema, payload) => {
+    validateActionPayload(schema, payload) {
         const ajv = new Ajv();
 
         const validate = ajv.compile(schema);
         const valid = validate(payload);
 
         return !valid ? validate.errors : true;
-    };
+    }
 
-    this.sendAction = (sender, actionBody) => {
+    sendAction(sender, actionBody) {
         if (this.currentAction) {
             return this.addActionToQueue(sender, actionBody);
         } else {
@@ -102,17 +108,19 @@ function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
         };
 
         this.setActionTimeout();
-    };
+    }
 
-    this.addAction = action => {
+    addAction(action) {
         console.log(`[Lively addAction]: Adding action ${action.type}, of Model ${action.model_type}`);
         this.actions = this.actions.set(action.type, action);
-    };
+    }
 
-    this.getAction = action_type => this.actions.get(action_type);
+    getAction(action_type) {
+        return this.actions.get(action_type);
+    }
 
     // TODO: Let people name their files in camelCase, snake_case, etc. Parse into CONSTANT_CASE.
-    this.loadActions = pathToActions => {
+    loadActions(pathToActions) {
         // recursive function to map files from directory
         const walkSync = (d) => {
             if (fs.statSync(d).isDirectory()) {
@@ -160,16 +168,18 @@ function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
                 this.addAction(action);
             }
         });
-    };
+    }
 
-    this.getModel = type => this.models.get(type);
+    getModel(type) {
+        this.models.get(type);
+    }
 
-    this.addModel = model => {
+    addModel(model) {
         console.log(`[Lively addModel]: Adding model ${model.modelName}`);
         this.models = this.models.set(model.modelName, model);
-    };
+    }
 
-    this.loadModels = pathToSchemas => {
+    loadModels(pathToSchemas) {
         // recursive function to map files from directory
         const walkSync = (d) => {
             if (fs.statSync(d).isDirectory()) {
@@ -187,17 +197,17 @@ function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
         
             this.addModel(Model);
         });
-    };
+    }
 
-    this.init = () => {
-        if (schemasPath) this.loadModels(schemasPath);
+    init() {
+        if (this.schemasPath) this.loadModels(this.schemasPath);
 
         this.api = express();
         
         this.api.use(cors());
         this.api.use(bodyParser.json());
 
-        if (actionsPath) this.loadActions(actionsPath);
+        if (this.actionsPath) this.loadActions(this.actionsPath);
 
         const server = http.createServer(this.api);
         const io = SocketIO(server);
@@ -228,14 +238,10 @@ function Lively({livelyOpts, expressOpts, mongoose, schemasPath, actionsPath}) {
             });
         });
 
-        server.listen(expressOpts.port, () => {
+        server.listen(this.expressOpts.port, () => {
             console.log("Lively Express API init'd.");
         });
     };
-
-    this.init();
-
-    return this;
 }
 
-module.exports = Lively; 
+export default Lively;

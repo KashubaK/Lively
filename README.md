@@ -4,33 +4,35 @@
 
 A streamlined solution for back-end to front-end realtime communication, and back-end structure.
 
-## Back-end
-
 Lively is in an early experimental stage - it’s mainly to help myself structure my node back-ends. I figured since it is so helpful to myself, it could possibly help others, too.
-Setup
 
-It’s ez.
+## Setup
 
 `$ git clone https://github.com/kashubak/Lively.git`
 
 `$ cd Lively`
 
-`$ npm install`
+`$ yarn`
 
-In your index.js, make sure your mongoose connection options are correct, alongside the paths to your actions and schemas folders:
+In your main.js, make sure your mongoose connection options are correct, alongside the paths to your actions and schemas folders:
 
 ```javascript
-const Lively = require('lively');
-const mongoose = require('mongoose');
+import Lively from 'lively';
+import mongoose from 'mongoose';
 
-mongoose.connect('yourConnectionURi');
+mongoose.connect('yourConnectionURI');
 
-const app = new Lively(8000, mongoose, __dirpath + '/actions', __dirpath + '/schemas');
+const app = new Lively({
+    expressOpts: { port: 8000 },
+    schemasPath: __dirname + "/schemas", 
+    actionsPath: __dirname + "/actions",
+    mongoose
+});
 ```
 
-`$ npm start` or `$ node .`
+`$ yarn start`
 
-That's it. You can add mongoose Schemas to your `/schemas` folder, and Lively Actions in this convention: `/actions/<Schema>/<ACTION_NAME>.js`. Lively will automatically load all of your actions and schemas.
+You can add mongoose Schemas to your `/schemas` folder, and Lively Actions in this convention: `/actions/<Schema>/<ACTION_NAME>.js`. Lively will automatically load all of your actions and schemas.
 
 ## Schemas
 
@@ -40,7 +42,8 @@ For example, a Todo schema:
 
 ```javascript
 // <your app>/schemas/Todo.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
+import anyPlugin from 'mongoose-any-plugin';
 
 const TodoSchema = new mongoose.Schema({
     title: String,
@@ -49,11 +52,11 @@ const TodoSchema = new mongoose.Schema({
     images: [String]
 });
 
-TodoSchema.plugin(<any plugin you want>);
+TodoSchema.plugin(anyPlugin());
 
 const Todo = mongoose.model('Todo', TodoSchema);
 
-module.exports = Todo;
+export default Todo;
 ```
 
 Some inconsistencies here: each file in the `/schemas` folder returns a `MongooseModel`. Also, it's not necessary for Lively to pull the model name from the filename, as it's very easy to pull it from the exported Model. But whatever, I guess, it forces nice file structure.
@@ -63,7 +66,7 @@ Some inconsistencies here: each file in the `/schemas` folder returns a `Mongoos
 Actions are simple objects:
 
 ```javascript
-module.exports = {
+export default {
     schema: {},
     
     fn(payload, sender, lively, Model) {
@@ -119,7 +122,7 @@ Lively handles actions one-by-one, thus requiring `Action.fn` to return a Promis
 Actions can also be endpoints, by declaring some extra keys in your action. Here’s a quick example that returns a simple object:
 
 ```javascript
-module.exports =  {
+export default {
     schema: {},
 
     endpoint: '/auth', // auto-prefixed by '/api'
@@ -229,62 +232,41 @@ When `io.on('connection', socket => … )` is fired, that `socket` object is sto
 
 ## Front-end
 
-#### Ember.js + Socket.io + Redux
+#### React + Socket.io + Redux
 
-The front-end module can be found under `Lively/client/lively.js`.
+The front-end module can be found under `Lively/client/dist/lively.js`.
 
 ### Setup
 
-This module is an Ember service, so just copy and paste it into your `app/services` folder, and inject it into any component/controller/route/etc that needs it.
+This module compiled from generic ES6 class via webpack. For certain frameworks (like Ember or Angular), you'll have to create a service that instantiates the class and interfaces with it.
 
-Upon initialization of the service, it calls `io(window.EmberENV.API_URL)`. So you'll need to add your `API_URL` to your Ember front-end `config/environment.js` file.
+The only argument it needs is the `API_URL` of your back-end.
 
-Look in the logs, and see if a `LIVELY_INITIALIED` event is received. If so, then Lively succesfully connected to the back-end, has a LivelyUser created, and is ready to send and receive events.
+Look in the browser console, and see if a `LIVELY_INITIALIED` event is received. If so, then Lively succesfully connected to the back-end, has a LivelyUser created, and is ready to send and receive events.
 
-#### Dependencies
-
-The Lively front-end module depends on the `redux` and `socket.io-client` npm packages, so install them in your Ember app, and include them in your `ember-cli-build.js` file.
-
-### Registering Reactions to back-end Events
+### Registering event handlers
 
 ```javascript
-import Component from '@ember/component';
-import { inject } from '@ember/service';
+const lively = new LivelyClient('http://localhost:3000');
 
-export default Component.extend({
-    lively: inject(),
-
-    init() {
-        this._super(...arguments);
-        
-        const lively = this.get('lively');
-
-        lively.registerEvent('AN_EVENT', (state, action) => {
-            state.foo = action.payload.bar;   
-            
-            return state;
-        });
-    });
+lively.registerEvent('AN_EVENT', (state, action) => {
+    state.foo = action.payload.bar;   
+    
+    return state;
 });
 ```
 
-As you can see, `registerEvent` requires two parameters: an event name, and a Redux Reducer. The first parameter reflects the `event.type` sent by the back-end upon calling `lively.sendEvent(event)`, so the module can determine which reducer to run upon receiving an event. The second parameter is a pure function that returns an updated clone of the current state, see “Redux Reducers”. Lively handles cloning the state for you, so you don’t have to worry about immutability. Just mutate the `state`, and return it.
-
-#### Pulling data from the state
-
-The state is stored in `lively.state`. You can add observers to individual keys on the state, or a simple `Ember.computed.alias(‘lively.state.foo’)` works too. Thanks, Ember! :)
+As you can see, `registerEvent` requires two parameters: an event name, and a reducer. The first parameter reflects the `event.type` sent by the back-end upon calling `lively.sendEvent(event)`, so the module can determine which reducer to run upon receiving an event. The second parameter is a pure function that returns an updated clone of the current state, see “Redux Reducers”. Lively handles cloning the state for you, so you don’t have to worry about immutability. Just mutate the `state`, and return it.
 
 ### Dispatching Actions
 
 What, you want to communicate with the back-end? Simply call `lively.dispatchServerAction`:
 
 ```javascript
-aFunction() {
-    this.get('lively').dispatchServerAction({
-        type: 'FOO',
-        payload: 'bar'
-    });
-}
+lively.dispatchServerAction({
+    type: 'FOO',
+    payload: 'bar'
+});
 ```
 
 Your back-end actions will fire events, so make sure you have handlers registered. Otherwise, Lively will log an error saying that your handler is incorrectly registered.
@@ -296,8 +278,6 @@ Sometimes, you’ll have events registered that you want to fire without any ser
 Check it, yo:
 
 ```javascript
-const lively = this.get('lively');
-
 lively.registerEvent('VIEW_TOGGLED', (state, action) => {
     state.viewToggled = action.payload;
     
@@ -309,4 +289,24 @@ lively.dispatchClientAction({
     type: 'VIEW_TOGGLED',
     payload: lively.state.viewToggled ? false : true
 });
+```
+
+#### Pulling data from the state
+
+The state is stored in `lively.state`.
+
+```javascript
+lively.registerEvent('VIEW_TOGGLED', (state, action) => {
+    state.viewToggled = action.payload;
+    
+    return state;
+});
+
+// You can do this wherever, either in a component Action or whatever. As long as the event handler is registered correctly beforehand!
+lively.dispatchClientAction({
+    type: 'VIEW_TOGGLED',
+    payload: true
+});
+
+lively.state.viewToggled === true; // -> true
 ```

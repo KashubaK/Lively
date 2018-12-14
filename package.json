@@ -4,8 +4,7 @@
   "description": "A simple, user-centered back-end framework for live data updating, and a streamlined architecture.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node ."
+    "start": "nodemon index.js"
   },
   "author": "Kyle Kashuba",
   "license": "MIT",
@@ -15,10 +14,12 @@
     "body-parser": "^1.18.2",
     "cors": "^2.8.4",
     "dotenv": "^5.0.1",
+    "esm": "^3.0.84",
     "express": "^4.16.3",
     "immutable": "^3.8.2",
     "lodash": "^4.17.5",
     "mongoose": "^5.0.14",
+    "nodemon": "^1.18.8",
     "socket.io": "^2.0.4",
     "uuid": "^3.2.1"
   }

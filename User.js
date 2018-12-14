@@ -1,21 +1,25 @@
-const v4 = require('uuid').v4;
-const Immutable = require('immutable');
+import { v4 } from 'uuid';
+import Immutable from 'immutable';
 
-function User(socket, data) {
-    this._id = v4();
+export default class User {
+    constructor(socket, data) {
+        this._id = v4();
 
-    this.socket = socket;
-    this.data = data; // For your User model, e.g. { _id: ..., username: "test123", password: "fas98dhf3892hfdsf", ... }
+        this.socket = socket;
+        this.data = data; // For your User model, e.g. { _id: ..., username: "test123", password: "fas98dhf3892hfdsf", ... }
 
-    this.sendEvent = eventPayload => {
+        this.subscriptions = Immutable.List();
+    }
+
+    sendEvent(eventPayload) {
         this.socket.emit('lively_event', eventPayload);
-    };
+    }
 
-    this.sendError = (actionPayload, error) => this.socket.emit('lively_error', {actionPayload, error});
+    sendError(actionPayload, error) { 
+        this.socket.emit('lively_error', {actionPayload, error});
+    }
 
-    this.subscriptions = Immutable.List();
-
-    this.subscribeTo = (document) => {
+    subscribeTo(document) {
         const modelName = document.constructor.modelName;
         const _id = document._id;
 
@@ -23,9 +27,9 @@ function User(socket, data) {
 
         this.subscriptions = this.subscriptions.push(subscription);
         this.socket.join(subscription);
-    };
+    }
 
-    this.unsubscribeFrom = (document) => {
+    unsubscribeFrom(document) {
         const modelName = document.constructor.modelName;
         const _id = document._id;
 
@@ -33,17 +37,13 @@ function User(socket, data) {
 
         this.subscriptions = this.subscriptions.filter(sub => sub !== subscription);
         this.socket.leave(subscription);
-    };
+    }
 
-    this.clearSubscriptions = () => {
+    clearSubscriptions() {
         this.subscriptions.forEach((subscription) => {
             this.socket.leave(subscription);
         });
 
         this.subscriptions = this.subscriptions.clear();
     };
-
-    return this;
 }
-
-module.exports = User;
